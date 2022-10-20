@@ -14,7 +14,7 @@ export class LayerAndMaskInformationSection {
   fieldsLength: number;
   layerInfo: LayerInfo;
   globalLayerMaskInfo: GlobalLayerMaskInfo;
-  // addtionalLayerInformation: AddtionalLayerInformation; // 存在しない？
+  additionalLayerInformations: AdditionalLayerInformation[] = [];
 
   constructor(binary: ArrayBuffer, start: number) {
     const view = new DataView(binary, start);
@@ -24,7 +24,28 @@ export class LayerAndMaskInformationSection {
       binary,
       start + this.FIELDS_LENGTH_LENGTH + this.layerInfo.length
     );
-    // this.addtionalLayerInformation
+    const pos =
+      view.byteOffset +
+      4 +
+      this.layerInfo.length +
+      this.globalLayerMaskInfo.length;
+    let len = 0;
+    for (;;) {
+      const sig = readSignature(binary.slice(pos + len, pos + 4 + len));
+      if (sig === null) {
+        break;
+      }
+
+      const ali = new AdditionalLayerInformation(view.buffer, pos + len);
+      this.additionalLayerInformations.push(ali);
+      len += ali.length;
+    }
+    if (
+      this.fieldsLength !==
+      this.layerInfo.length + this.globalLayerMaskInfo.length + len
+    ) {
+      throw new Error('LayerAndMaskInformationSection length is invalid');
+    }
   }
 
   get length(): number {
@@ -45,31 +66,32 @@ class LayerInfo {
   constructor(binary: ArrayBuffer, start: number) {
     const view = new DataView(binary, start);
     this.layerInfoLength = view.getUint32(0);
-    this.layerCount = view.getUint16(this.LAYER_INFO_LENGTH_LENGTH);
+    this.layerCount = view.getInt16(this.LAYER_INFO_LENGTH_LENGTH);
 
     this.layerRecords = [];
     let layerRecordPosition =
       view.byteOffset + this.LAYER_INFO_LENGTH_LENGTH + this.LAYER_COUNT_LENGTH;
-    for (let i = 0; i < this.layerCount; i++) {
+
+    for (let i = 0; i < Math.abs(this.layerCount); i++) {
       const layerRecord = new LayerRecord(binary, layerRecordPosition);
       layerRecordPosition += layerRecord.length;
       this.layerRecords.push(layerRecord);
     }
 
     this.channelImageData = [];
-    for (let i = 0; i < this.layerCount; i++) {
+    for (let i = 0; i < Math.abs(this.layerCount); i++) {
       const layerChannelImageData = this.layerRecords[
         i
       ].channelInformations.map((c) => {
         const channelImageData = new ChannelImageData(
           binary,
           layerRecordPosition,
-          this.layerRecords[i]
+          this.layerRecords[i],
+          c
         );
         if (channelImageData.length !== c.channelDataLength) {
-          throw new Error();
+          throw new Error('channelImageData.length is invalid');
         }
-
         layerRecordPosition += channelImageData.length;
         return channelImageData;
       });
@@ -77,14 +99,26 @@ class LayerInfo {
     }
 
     this.length = layerRecordPosition - start;
+
+    // this.length += this.length % 4 === 0 ? 0 : 4 - (this.length % 4);
+    // if (this.layerInfoLength + 4 !== this.length) {}
+    if (this.length > this.layerInfoLength + 4) {
+      throw new Error('layerInfoLength is invalid');
+    }
+    this.length = this.layerInfoLength + 4;
   }
 }
+
+type ChannelInformation = {
+  channelId: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | -1 | -2 | -3;
+  channelDataLength: number;
+};
 
 class LayerRecord {
   coordinates: { top: number; left: number; bottom: number; right: number };
   channelNum: number;
-  channelInformations: { channelId: number; channelDataLength: number }[] = [];
-  signature: string; // 8BIM
+  channelInformations: ChannelInformation[] = [];
+  signature: '8BIM'; // 8BIM
   blendModeKey: string;
   opacity: number;
   clipping: number;
@@ -94,7 +128,7 @@ class LayerRecord {
   layerMaskData: LayerMaskData;
   layerBlendingRanges: LayerBlendingRanges;
   layerName: string;
-  additionalLayerInformations: AddtionalLayerInformation[] = [];
+  additionalLayerInformations: AdditionalLayerInformation[] = [];
 
   lll: number;
 
@@ -110,8 +144,28 @@ class LayerRecord {
 
     let channelInformationPosition = 18;
     for (let i = 0; i < this.channelNum; i++) {
-      const info = {
-        channelId: view.getInt16(channelInformationPosition),
+      const id = view.getInt16(channelInformationPosition);
+      if (
+        !(
+          id === 0 ||
+          id === 1 ||
+          id === 2 ||
+          id === 3 ||
+          id === 4 ||
+          id === 5 ||
+          id === 6 ||
+          id === 7 ||
+          id === 8 ||
+          id === 9 ||
+          id === -1 ||
+          id === -2 ||
+          id === -3
+        )
+      ) {
+        throw new Error(`channelID is invalid: ${id}`);
+      }
+      const info: ChannelInformation = {
+        channelId: id,
         channelDataLength: view.getUint32(channelInformationPosition + 2),
       };
       this.channelInformations.push(info);
@@ -119,13 +173,17 @@ class LayerRecord {
     }
 
     const signatureLength = 4;
-    this.signature = readText(
+    const sig = readText(
       view.buffer.slice(
         view.byteOffset + channelInformationPosition,
         view.byteOffset + channelInformationPosition + signatureLength
       ),
       'utf-8'
-    ); // 8BIM
+    );
+    if (sig !== '8BIM') {
+      throw new Error('LayerRecord.signature invalid');
+    }
+    this.signature = sig;
 
     const blendModeKeyLength = 4;
     this.blendModeKey = readText(
@@ -204,7 +262,10 @@ class LayerRecord {
         break;
       }
 
-      const ali = new AddtionalLayerInformation(view.buffer, b + padding + len);
+      const ali = new AdditionalLayerInformation(
+        view.buffer,
+        b + padding + len
+      );
       this.additionalLayerInformations.push(ali);
       len += ali.length;
     }
@@ -217,9 +278,15 @@ class LayerRecord {
   }
 }
 
+type Rectangle = {
+  top: number;
+  left: number;
+  bottom: number;
+  right: number;
+};
 class LayerMaskData {
   layerMaskDataLength: number;
-  rectangle: object | null = null;
+  rectangle: Rectangle | null = null;
   defaultColor: number | null = null; // 0 or 255
   flags: number | null = null;
   maskParameters: number | null = null;
@@ -227,7 +294,7 @@ class LayerMaskData {
   padding: number | null = null;
   realFlags: number | null = null;
   realUserMaskBackground: number | null = null; // 0 or 255
-  rectangleEnclosingLayerMask: object | null = null;
+  rectangleEnclosingLayerMask: Rectangle | null = null;
 
   constructor(binary: ArrayBuffer, start: number) {
     const view = new DataView(binary, start);
@@ -320,11 +387,25 @@ class LayerBlendingRanges {
   }
 }
 
-class AddtionalLayerInformation {
+class AdditionalLayerInformation {
   signature: string; // 8BIM
   key: string;
   dataLength: number;
-  data: Luni | Lsct;
+  data:
+    | Luni
+    | Lsct
+    | Lyid
+    | Clbl
+    | Infx
+    | Knko
+    | Lspf
+    | Lclr
+    | Shmd
+    | Fxrp
+    | Lnsr
+    | Lyvr
+    | Patt
+    | Fmsk;
 
   constructor(binary: ArrayBuffer, start: number) {
     const view = new DataView(binary, start);
@@ -349,6 +430,55 @@ class AddtionalLayerInformation {
       this.data = new Lsct(binary, view.byteOffset + 12, this.dataLength);
       return;
     }
+    if (this.key === 'lyid') {
+      this.data = new Lyid(binary, view.byteOffset + 12);
+      return;
+    }
+    if (this.key === 'clbl') {
+      this.data = new Clbl(binary, view.byteOffset + 12);
+      return;
+    }
+    if (this.key === 'infx') {
+      this.data = new Infx(binary, view.byteOffset + 12);
+      return;
+    }
+    if (this.key === 'knko') {
+      this.data = new Knko(binary, view.byteOffset + 12);
+      return;
+    }
+    if (this.key === 'lspf') {
+      this.data = new Lspf(binary, view.byteOffset + 12);
+      return;
+    }
+    if (this.key === 'lclr') {
+      this.data = new Lclr(binary, view.byteOffset + 12);
+      return;
+    }
+    if (this.key === 'shmd') {
+      this.data = new Shmd(binary, view.byteOffset + 12);
+      return;
+    }
+    if (this.key === 'fxrp') {
+      this.data = new Fxrp(binary, view.byteOffset + 12);
+      return;
+    }
+    if (this.key === 'lnsr') {
+      this.data = new Lnsr(binary, view.byteOffset + 12);
+      return;
+    }
+    if (this.key === 'lyvr') {
+      this.data = new Lyvr(binary, view.byteOffset + 12);
+      return;
+    }
+    if (this.key === 'Patt' || this.key === 'Pat2' || this.key === 'Pat3') {
+      this.data = new Patt(view.buffer, view.byteOffset + 12, this.dataLength);
+      return;
+    }
+    if (this.key === 'FMsk') {
+      this.data = new Fmsk(binary, view.byteOffset + 12);
+      return;
+    }
+
     throw new Error(`another ali ${this.key}`);
   }
 
@@ -416,12 +546,177 @@ class Lsct {
   }
 }
 
+class Lyid {
+  id: number;
+
+  constructor(binary: ArrayBuffer, start: number) {
+    const view = new DataView(binary, start);
+    this.id = view.getUint32(0);
+  }
+}
+
+class Clbl {
+  blendClippedElements: boolean;
+
+  constructor(binary: ArrayBuffer, start: number) {
+    const view = new DataView(binary, start);
+    this.blendClippedElements = view.getUint8(0) !== 0;
+  }
+}
+
+class Infx {
+  blendClippedElements: boolean;
+
+  constructor(binary: ArrayBuffer, start: number) {
+    const view = new DataView(binary, start);
+    this.blendClippedElements = view.getUint8(0) !== 0;
+  }
+}
+
+class Knko {
+  knockout: boolean;
+
+  constructor(binary: ArrayBuffer, start: number) {
+    const view = new DataView(binary, start);
+    this.knockout = view.getUint8(0) !== 0;
+  }
+}
+
+class Lspf {
+  protectionFlags: number[] = [];
+
+  constructor(binary: ArrayBuffer, start: number) {
+    const view = new DataView(binary, start);
+    for (let i = 0; i < 4; i++) {
+      this.protectionFlags.push(view.getUint8(i));
+    }
+  }
+}
+
+class Lclr {
+  colors: number[] = [];
+
+  constructor(binary: ArrayBuffer, start: number) {
+    const view = new DataView(binary, start);
+    for (let i = 0; i < 2; i++) {
+      this.colors.push(view.getUint16(i * 4));
+    }
+  }
+}
+
+class Shmd {
+  metaddataItemCount: number;
+  metadata: {
+    signature: number;
+    key: number;
+    sheetDuplication: number;
+    dataLength: number;
+    data: number;
+  }[] = [];
+
+  constructor(binary: ArrayBuffer, start: number) {
+    const view = new DataView(binary, start);
+    this.metaddataItemCount = view.getUint32(0);
+    for (let i = 0, pos = 0; i < this.metaddataItemCount; i++) {
+      const metadata = {
+        signature: view.getUint32(pos),
+        key: view.getUint32(pos + 4),
+        sheetDuplication: view.getUint8(pos + 8),
+        dataLength: view.getUint32(pos + 12),
+        data: view.getUint32(pos + 16),
+      };
+      this.metadata.push(metadata);
+      pos += 16 + metadata.dataLength;
+    }
+  }
+}
+
+class Fxrp {
+  referencePoint: number[] = [];
+
+  constructor(binary: ArrayBuffer, start: number) {
+    const view = new DataView(binary, start);
+    for (let i = 0; i < 8; i++) {
+      this.referencePoint.push(view.getUint16(i * 2));
+    }
+  }
+}
+
+class Lnsr {
+  id: number;
+
+  constructor(binary: ArrayBuffer, start: number) {
+    const view = new DataView(binary, start);
+    this.id = view.getUint32(0);
+  }
+}
+
+class Lyvr {
+  id: number;
+
+  constructor(binary: ArrayBuffer, start: number) {
+    const view = new DataView(binary, start);
+    this.id = view.getUint32(0);
+  }
+}
+
+class Patt {
+  patterns: {
+    patternLength: number;
+    // version: 1;
+    // imageMode: 0 | 1 | 2 | 3 | 4 | 7 | 8 | 9;
+    // point: {
+    //   vertical: number;
+    //   horizontal: number;
+    // };
+    // name: string;
+    // uniqueId: string;
+    // indexColorTable: {
+    //   red: number; // Uint8
+    //   green: number; // Uint8
+    //   blue: number; // Uint8
+    // };
+    // patternData: VirtualMemoryArrayList;
+  }[] = [];
+
+  constructor(binary: ArrayBuffer, start: number, length: number) {
+    const view = new DataView(binary, start);
+    for (let len = 0; len < length; ) {
+      const pattern = {
+        patternLength: view.getUint32(0),
+      };
+      len += 4;
+      this.patterns.push(pattern);
+      if (pattern.patternLength === 0) {
+        continue;
+      }
+      throw new TodoError();
+    }
+  }
+}
+
+class Fmsk {
+  // colorSpace:number;
+  opacity: number;
+
+  constructor(binary: ArrayBuffer, start: number) {
+    const view = new DataView(binary, start);
+    // this.colorSpace =
+    this.opacity = view.getUint16(10);
+  }
+}
+
 class ChannelImageData {
   compression: 0 | 1 | 2 | 3;
   imageData: ArrayBuffer;
   length: number;
 
-  constructor(binary: ArrayBuffer, start: number, layerRecord: LayerRecord) {
+  constructor(
+    binary: ArrayBuffer,
+    start: number,
+    layerRecord: LayerRecord,
+    channelInformation: ChannelInformation
+  ) {
     const view = new DataView(binary, start);
     const compression = view.getUint16(0);
     if (
@@ -436,10 +731,23 @@ class ChannelImageData {
     }
     this.compression = compression;
 
+    let rect;
+    if (
+      channelInformation.channelId === -2 &&
+      layerRecord.layerMaskData.rectangle
+    ) {
+      rect = layerRecord.layerMaskData.rectangle;
+    } else if (
+      channelInformation.channelId === -3 &&
+      layerRecord.layerMaskData.rectangleEnclosingLayerMask
+    ) {
+      rect = layerRecord.layerMaskData.rectangleEnclosingLayerMask;
+    } else {
+      rect = layerRecord.coordinates;
+    }
+
     if (this.compression === 0) {
-      const len =
-        (layerRecord.coordinates.bottom - layerRecord.coordinates.top) *
-        (layerRecord.coordinates.right - layerRecord.coordinates.left);
+      const len = (rect.bottom - rect.top) * (rect.right - rect.left);
       this.imageData = binary.slice(start + 2, start + 2 + len);
       this.length = 2 + len;
       // this.length = 2 + len + (len % 2 === 0 ? 0 : 1);
@@ -449,19 +757,16 @@ class ChannelImageData {
     if (this.compression === 1) {
       let pos = 2; // imageData start
 
-      const rowCount =
-        layerRecord.coordinates.bottom - layerRecord.coordinates.top;
+      const rowCount = rect.bottom - rect.top;
       let len = 0;
       for (let i = 0; i < rowCount; i++) {
         len += view.getUint16(pos + 2 * i);
       }
 
       const rleHeadLength = 2 * rowCount;
-      // console.log(len % 2 === 0 ? 0 : 1);
       pos += rleHeadLength + len;
       // pos += rleHeadLength + len + (len % 2 === 0 ? 0 : 1);
 
-      // console.log(c.channelDataLength, lll);
       this.length = pos;
       this.imageData = binary.slice(start + 2, start + 2 + this.length);
       return;
@@ -478,7 +783,7 @@ class GlobalLayerMaskInfo {
   sectionLength: number;
   overlayColorSpace: number | null = null;
   colorComponents: number[] | null = null;
-  opacity: 0 | 100 | null = null;
+  opacity: number | null = null;
   kind: 0 | 1 | 128 | null = null;
   filler: string | null = null;
 
@@ -494,11 +799,10 @@ class GlobalLayerMaskInfo {
     for (let i = 0; i < 4; i++) {
       this.colorComponents.push(view.getUint16(6 + i * 2));
     }
-    const opacity = view.getUint16(14);
-    if (!(opacity === 0 || opacity === 100)) {
-      throw new Error('GlobalLayerMaskInfo.opacity invalid');
-    }
-    this.opacity = opacity;
+    // if (!(opacity === 0 || opacity === 100)) {
+    //   throw new Error(`GlobalLayerMaskInfo.opacity invalid: ${opacity}`);
+    // }
+    this.opacity = view.getUint16(14);
 
     const kind = view.getUint8(16);
     if (!(kind === 0 || kind === 1 || kind === 128)) {
