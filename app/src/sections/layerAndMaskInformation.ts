@@ -405,7 +405,8 @@ class AdditionalLayerInformation {
     | Lnsr
     | Lyvr
     | Patt
-    | Fmsk;
+    | Fmsk
+    | Cinf;
 
   constructor(binary: ArrayBuffer, start: number) {
     const view = new DataView(binary, start);
@@ -478,6 +479,10 @@ class AdditionalLayerInformation {
       this.data = new Fmsk(binary, view.byteOffset + 12);
       return;
     }
+    if (this.key === 'cinf') {
+      this.data = new Cinf(binary, view.byteOffset + 12);
+      return;
+    }
 
     throw new Error(`another ali ${this.key}`);
   }
@@ -487,7 +492,8 @@ class AdditionalLayerInformation {
       Uint32Array.BYTES_PER_ELEMENT +
       Uint32Array.BYTES_PER_ELEMENT +
       Uint32Array.BYTES_PER_ELEMENT +
-      this.dataLength
+      this.dataLength +
+      (this.dataLength % 2 === 0 ? 0 : 1)
     );
   }
 }
@@ -703,6 +709,20 @@ class Fmsk {
     const view = new DataView(binary, start);
     // this.colorSpace =
     this.opacity = view.getUint16(10);
+  }
+}
+
+class Cinf {
+  version: 16;
+  // descriptor: DescriptorStructure;
+
+  constructor(binary: ArrayBuffer, start: number) {
+    const view = new DataView(binary, start);
+    const version = view.getUint32(0);
+    if (version !== 16) {
+      throw new Error('Cinf.version is invalid');
+    }
+    this.version = version;
   }
 }
 
