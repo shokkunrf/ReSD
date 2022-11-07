@@ -2,9 +2,8 @@ export class ImageDataSection {
   compression: 0 | 1 | 2 | 3;
   imageData: ArrayBuffer;
 
-  constructor(binary: ArrayBuffer, start: number) {
-    const view = new DataView(binary, start);
-    const compression = view.getUint16(0);
+  constructor(view: DataView, start: number) {
+    const compression = view.getUint16(start);
     if (
       !(
         compression === 0 ||
@@ -16,6 +15,6 @@ export class ImageDataSection {
       throw new Error(`ImageDataSection.compression invalid ${compression}`);
     }
     this.compression = compression;
-    this.imageData = binary.slice(start + 2);
+    this.imageData = view.buffer.slice(start + 2);
   }
 }

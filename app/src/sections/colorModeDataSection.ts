@@ -5,9 +5,8 @@ const COLOR_DATA_LENGTH_LENGTH = Uint32Array.BYTES_PER_ELEMENT;
 export class ColorModeDataSection {
   colorDataLength: number;
 
-  constructor(binary: ArrayBuffer, start: number) {
-    const view = new DataView(binary, start);
-    this.colorDataLength = view.getUint32(0);
+  constructor(view: DataView, start: number) {
+    this.colorDataLength = view.getUint32(start);
   }
 
   get length(): number {

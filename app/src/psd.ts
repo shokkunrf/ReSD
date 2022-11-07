@@ -4,17 +4,13 @@ import { ImageResourcesSection } from './sections/imageResourcesSection';
 import { LayerAndMaskInformationSection } from './sections/layerAndMaskInformation';
 
 export class Psd {
-  private binary: ArrayBuffer;
-
   // fileHeaderSection: FileHeaderSection;
   colorModeDataSection: ColorModeDataSection;
   imageResourcesSection: ImageResourcesSection;
   layerAndMaskInformationSection: LayerAndMaskInformationSection;
   ImageDataSection: ImageDataSection;
 
-  constructor(binary: ArrayBuffer) {
-    this.binary = binary;
-
+  constructor(view: DataView) {
     // File Header Section
     // https://www.adobe.com/devnet-apps/photoshop/fileformatashtml/#50577409_pgfId-1055726
     // this.fileHeaderSection = new FileHeaderSection(binary);
@@ -22,7 +18,7 @@ export class Psd {
     // Color Mode Data Section
     const colorModeDataSectionStart = 26;
     this.colorModeDataSection = new ColorModeDataSection(
-      binary,
+      view,
       colorModeDataSectionStart
     );
 
@@ -30,7 +26,7 @@ export class Psd {
     const imageResourcesSectionStart =
       colorModeDataSectionStart + this.colorModeDataSection.length;
     this.imageResourcesSection = new ImageResourcesSection(
-      binary,
+      view,
       imageResourcesSectionStart
     );
 
@@ -38,7 +34,7 @@ export class Psd {
     const layerAndMaskInformationSectionStart =
       imageResourcesSectionStart + this.imageResourcesSection.length;
     this.layerAndMaskInformationSection = new LayerAndMaskInformationSection(
-      binary,
+      view,
       layerAndMaskInformationSectionStart
     );
 
@@ -46,6 +42,6 @@ export class Psd {
     const imageDataSectionStart =
       layerAndMaskInformationSectionStart +
       this.layerAndMaskInformationSection.length;
-    this.ImageDataSection = new ImageDataSection(binary, imageDataSectionStart);
+    this.ImageDataSection = new ImageDataSection(view, imageDataSectionStart);
   }
 }

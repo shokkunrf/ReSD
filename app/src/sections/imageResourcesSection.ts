@@ -7,11 +7,10 @@ export class ImageResourcesSection {
   imageResourceBlocksLength: number;
   imageResourceBlocks: ImageResourcesBlock[] = [];
 
-  constructor(binary: ArrayBuffer, start: number) {
-    const view = new DataView(binary, start);
-    this.imageResourceBlocksLength = view.getUint32(0);
+  constructor(view: DataView, start: number) {
+    this.imageResourceBlocksLength = view.getUint32(start);
     for (let i = 0; i < this.imageResourceBlocksLength; ) {
-      const irb = new ImageResourcesBlock(binary, start + 4 + i);
+      const irb = new ImageResourcesBlock(view, start + 4 + i);
       this.imageResourceBlocks.push(irb);
       i += irb.length;
     }
@@ -29,25 +28,21 @@ class ImageResourcesBlock {
   dataLength: number;
   length: number;
 
-  constructor(binary: ArrayBuffer, start: number) {
-    const view = new DataView(binary, start);
-    const sig = readText(
-      view.buffer.slice(view.byteOffset, view.byteOffset + 4),
-      'utf-8'
-    );
+  constructor(view: DataView, start: number) {
+    const sig = readText(view.buffer.slice(start, start + 4), 'utf-8');
     if (sig !== '8BIM') {
       throw new Error('ImageResourceBlock.signature invalid');
     }
     this.signature = sig;
     this.id = view.getUint16(4);
     const [name, nameLength] = readPascalString(
-      binary.slice(view.byteOffset + 6),
+      view.buffer.slice(start + 6),
       'utf-8'
     );
     this.name = name;
     const padding = nameLength % 2 === 0 ? 0 : 1;
 
-    this.dataLength = view.getUint32(6 + nameLength + padding);
+    this.dataLength = view.getUint32(start + 6 + nameLength + padding);
     const dataLength =
       this.dataLength % 2 === 0 ? this.dataLength : this.dataLength + 1;
     this.length = 6 + nameLength + padding + 4 + dataLength;
