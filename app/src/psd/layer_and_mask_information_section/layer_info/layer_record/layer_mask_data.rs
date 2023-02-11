@@ -1,40 +1,56 @@
-mod rectangle;
-
-use self::rectangle::{get_rectangle, Rectangle};
 use crate::binary::Binary;
 
-pub enum LayerMaskData {
-    NotPresent(NotPresent),
-    SomePresent(SomePresent),
-    FullPresent(FullPresent),
+pub struct LayerMaskData {
+    pub length: u32,
+    pub fields: Option<Fields>,
 }
 
-pub struct NotPresent {
-    pub layer_mask_data_length: u32,
-}
-
-pub struct Full {
-    pub layer_mask_data_length: u32,
+pub struct Fields {
     pub rectangle: Rectangle,
     pub default_color: u8, // 0 or 255
-                           // pub    flags: number | null = null;
-                           // pub    maskParameters: number | null = null;
-                           // pub  maskParametersFlags: number | null = null;
-                           // pub padding: number | null = null;
-                           // pub realFlags: number | null = null;
-                           // pub realUserMaskBackground: number | null = null; // 0 or 255
-                           // pub rectangleEnclosingLayerMask: Rectangle | null = null;
+    pub flag: u8,
+    pub mask: Option<Mask>,
+    pub real: Option<Real>,
+}
+
+pub struct Rectangle {
+    pub top: u32,
+    pub left: u32,
+    pub bottom: u32,
+    pub right: u32,
+}
+
+pub struct Mask {
+    pub flag: u8,
+    pub parameter: MaskParameter,
+}
+
+pub enum MaskParameter {
+    Density(i8),
+    Feather(f64),
+}
+
+pub struct Real {
+    pub flag: u8,
+    pub user_mask_background: u8, // 0 or 255
+    pub rectangle: Rectangle,
 }
 
 pub fn get_layer_mask_data(binary: &mut Binary) -> LayerMaskData {
-    let layer_mask_data_length = binary.read_u32().unwrap();
-    if layer_mask_data_length == 0 {
-        return LayerMaskData::NotPresent(NotPresent {
-            layer_mask_data_length,
-        });
+    let length = binary.read_u32().unwrap();
+    if length == 0 {
+        return LayerMaskData {
+            length,
+            fields: None,
+        };
     }
 
-    let rectangle = get_rectangle(binary);
+    let rectangle = Rectangle {
+        top: binary.read_u32().unwrap(),
+        left: binary.read_u32().unwrap(),
+        bottom: binary.read_u32().unwrap(),
+        right: binary.read_u32().unwrap(),
+    };
 
     let default_color = binary.read_u8().unwrap();
     match default_color {
@@ -42,11 +58,80 @@ pub fn get_layer_mask_data(binary: &mut Binary) -> LayerMaskData {
         _ => panic!(""),
     }
 
-    let flags = binary.read_u8().unwrap();
+    let flag = binary.read_u8().unwrap();
+    match flag {
+        0 | 1 | 2 | 4 | 8 => (),
+        _ => panic!(""),
+    }
 
-    LayerMaskData::Full(Full {
-        layer_mask_data_length,
-        rectangle,
-        default_color,
-    })
+    let mask: Option<Mask> = if flag == 8 {
+        let mask_flag = binary.read_u8().unwrap();
+        let mask_parameter = match mask_flag {
+            0 | 2 => {
+                let n = binary.read_i8().unwrap();
+                MaskParameter::Density(n)
+            }
+            1 | 4 => {
+                let n = binary.read_f64().unwrap();
+                MaskParameter::Feather(n)
+            }
+            _ => panic!(""),
+        };
+
+        Some(Mask {
+            flag: mask_flag,
+            parameter: mask_parameter,
+        })
+    } else {
+        None
+    };
+
+    if length == 20 {
+        // padding
+        // binary.increment_position(2);
+        return LayerMaskData {
+            length,
+            fields: Some(Fields {
+                rectangle,
+                default_color,
+                flag,
+                mask,
+                real: None,
+            }),
+        };
+    }
+
+    let real_flag = binary.read_u8().unwrap();
+    match real_flag {
+        0 | 1 | 2 | 4 | 8 => (),
+        _ => panic!(""),
+    }
+
+    let real_user_mask_background = binary.read_u8().unwrap();
+    match real_user_mask_background {
+        0 | 255 => (),
+        _ => panic!(""),
+    }
+
+    let real_rectangle = Rectangle {
+        top: binary.read_u32().unwrap(),
+        left: binary.read_u32().unwrap(),
+        bottom: binary.read_u32().unwrap(),
+        right: binary.read_u32().unwrap(),
+    };
+
+    LayerMaskData {
+        length,
+        fields: Some(Fields {
+            rectangle,
+            default_color,
+            flag,
+            mask,
+            real: Some(Real {
+                flag: real_flag,
+                user_mask_background: real_user_mask_background,
+                rectangle: real_rectangle,
+            }),
+        }),
+    }
 }

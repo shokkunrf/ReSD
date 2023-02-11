@@ -1,11 +1,14 @@
+mod additional_layer_informations;
 mod layer_info;
 
-use self::layer_info::{get_layer_info, LayerInfo};
+use self::{
+    additional_layer_informations::{
+        get_additional_layer_informations, AdditionalLayerInformation,
+    },
+    layer_info::{get_layer_info, LayerInfo},
+};
 use crate::binary::Binary;
-use wasm_bindgen::prelude::wasm_bindgen;
 
-// #[derive(Clone, Copy, Debug)]
-// #[wasm_bindgen]
 pub struct LayerAndMaskInformationSection {
     pub length: u32,
     pub layer_info: LayerInfo,

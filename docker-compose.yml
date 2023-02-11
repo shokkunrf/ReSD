@@ -5,5 +5,14 @@ services:
     volumes:
       - "./app:/app"
     working_dir: "/app"
-    command: "sh"
-    tty: true
+    command: "wasm-pack build"
+  demo:
+    image: "node:16.19.0-bullseye-slim"
+    volumes:
+      - "./app:/app"
+      - "./demo:/demo"
+    working_dir: "/demo"
+    user: "node"
+    command: "sh -c 'npm i && npm run dev'"
+    ports:
+      - "8080:8080"

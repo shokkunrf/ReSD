@@ -1,9 +1,5 @@
-use wasm_bindgen::prelude::wasm_bindgen;
-
 use crate::binary::Binary;
 
-#[wasm_bindgen]
-#[derive(Clone, Copy, Debug)]
 pub struct FileHeaderSection {
     pub channel_count: u16,
     pub height: u32,

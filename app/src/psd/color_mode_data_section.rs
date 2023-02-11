@@ -1,9 +1,5 @@
-use wasm_bindgen::prelude::wasm_bindgen;
-
 use crate::binary::Binary;
 
-#[wasm_bindgen]
-#[derive(Clone, Copy, Debug)]
 pub struct ColorModeDataSection {
     pub length: u32,
 }

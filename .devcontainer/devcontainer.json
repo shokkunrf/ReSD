@@ -1,7 +1,11 @@
 {
-	"name": "Existing Dockerfile",
-	"context": "..",
-	"dockerFile": "../Dockerfile",
+	"name": "Existing Docker Compose (Extend)",
+	"dockerComposeFile": [
+		"../docker-compose.yml",
+		"docker-compose.yml"
+	],
+	"service": "app",
+	"workspaceFolder": "/workspaces",
 	"extensions": [
 		"rust-lang.rust-analyzer",
 		"tamasfe.even-better-toml"
